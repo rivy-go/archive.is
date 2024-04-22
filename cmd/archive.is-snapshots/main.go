@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -15,24 +16,15 @@ var (
 	Verbose        bool
 	Wait           bool
 	RequestTimeout time.Duration = archiveis.DefaultRequestTimeout
-	PollInterval   time.Duration = archiveis.DefaultPollInterval
-	WaitTimeout    time.Duration = time.Duration(0)
-	Anyway         bool
-	submitID       string
 )
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&Quiet, "quiet", "q", false, "Activate quiet log output")
 	rootCmd.PersistentFlags().BoolVarP(&Verbose, "verbose", "v", false, "Activate verbose log output")
-	rootCmd.PersistentFlags().BoolVarP(&Wait, "wait", "w", false, "Wait for crawl to finish before returning URL result")
 	rootCmd.PersistentFlags().DurationVarP(&RequestTimeout, "request-timeout", "r", RequestTimeout, "Timeout duration for HTTP requests")
-	rootCmd.PersistentFlags().DurationVarP(&PollInterval, "poll-interval", "p", PollInterval, "Poll interval, only applies when -w/--wait is active")
-	rootCmd.PersistentFlags().DurationVarP(&WaitTimeout, "wait-timeout", "", WaitTimeout, "Maximum wait duration, only applies when -w/--wait is active (default: infinite)")
-	rootCmd.PersistentFlags().BoolVarP(&Anyway, "anyway", "a", false, "Force archival even if there is already a recent snapshot of the page")
 	rootCmd.PersistentFlags().StringVarP(&archiveis.BaseURL, "base-url", "b", archiveis.BaseURL, "Archive.is server base URL address")
 	rootCmd.PersistentFlags().StringVarP(&archiveis.HTTPHost, "http-host", "", archiveis.HTTPHost, "'Host' header to use")
 	rootCmd.PersistentFlags().StringVarP(&archiveis.UserAgent, "user-agent", "u", archiveis.UserAgent, "'User-Agent' header to use")
-	rootCmd.PersistentFlags().StringVarP(&submitID, "submitid", "s", "", "Manually specify submitid value to use")
 }
 
 func main() {
@@ -42,28 +34,26 @@ func main() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "archive.is",
-	Short: "submits URLs to archive.is for archival",
-	Long:  "command-line interface to submit URLs to archive.is for webpage snapshot archival",
+	Use:   "archive.is-snapshots",
+	Short: "search for archive.is snapshots",
+	Long:  "command-line interface for searching archive.is for URL page snapshots",
 	Args:  cobra.MinimumNArgs(1),
 	PreRun: func(_ *cobra.Command, _ []string) {
 		initLogging()
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg := archiveis.Config{
-			Anyway:   Anyway,
-			Wait:     Wait,
-			SubmitID: submitID,
-		}
-
-		result, err := archiveis.Capture(args[0], cfg)
-
-		if len(result) > 0 {
-			fmt.Println(result)
-		}
-
+		snapshots, err := archiveis.Search(args[0], RequestTimeout)
 		if err != nil {
 			errorExit(err)
+		}
+
+		log.Infof("Found %v results", len(snapshots))
+
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "    ")
+
+		if err := enc.Encode(&snapshots); err != nil {
+			errorExit(fmt.Errorf("marshalling snapshots to JSON: %s", err))
 		}
 	},
 }
